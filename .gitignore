@@ -1,0 +1,3 @@
+# KiCad transient lock files
+*.lck
+~*.lck
