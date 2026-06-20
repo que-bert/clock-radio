@@ -8433,7 +8433,7 @@
 			(uuid "8d987086-31b3-49dc-8159-833a78447206")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "FB1")
 					(unit 1)
@@ -8769,7 +8769,7 @@
 			(uuid "bb489fe3-3d6f-4ac2-8efa-9e3cfd70b1d6")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "C4")
 					(unit 1)
@@ -8837,7 +8837,7 @@
 			(uuid "6fcd3ef4-1238-4ffa-823e-7dee95c4110e")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "C5")
 					(unit 1)
@@ -8904,7 +8904,7 @@
 			(uuid "a7f1b27c-5a94-4399-8b32-e8f141896d00")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "#FLG03")
 					(unit 1)
@@ -9038,7 +9038,7 @@
 			(uuid "49f42a8b-13e2-425c-89fd-68679be36466")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "R11")
 					(unit 1)
@@ -9172,7 +9172,7 @@
 			(uuid "047de856-25d5-43e9-9fc4-a97f13785b7b")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "#PWR09")
 					(unit 1)
@@ -9512,7 +9512,7 @@
 			(uuid "2f1508b0-3f8a-499a-bb87-43159ac7fd36")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "C9")
 					(unit 1)
@@ -9715,7 +9715,7 @@
 			(uuid "28dd6d58-79b8-4fcb-856b-5bb05ecb4805")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "C14")
 					(unit 1)
@@ -9853,7 +9853,7 @@
 			(uuid "20300c54-377b-486f-b255-bec715f88fd8")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "J6")
 					(unit 1)
@@ -9921,7 +9921,7 @@
 			(uuid "65f791f4-96f6-46d3-9be7-dabdae8f53f5")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "R10")
 					(unit 1)
@@ -9990,7 +9990,7 @@
 			(uuid "5f93e021-3511-49b6-a5ab-16db00ddbd72")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "R6")
 					(unit 1)
@@ -10136,7 +10136,7 @@
 			(uuid "b5804135-72d4-493f-863f-497a7a06c548")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "J1")
 					(unit 1)
@@ -10269,7 +10269,7 @@
 			(uuid "62e0646d-9a26-435b-859a-6dc0c4a683bd")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "#PWR029")
 					(unit 1)
@@ -10675,7 +10675,7 @@
 			(uuid "70c1a112-0b80-40f8-8670-cae5b284df9c")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "#PWR018")
 					(unit 1)
@@ -10884,7 +10884,7 @@
 			(uuid "37440150-46a9-4db4-8546-a5409a5b3495")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "U2")
 					(unit 1)
@@ -11497,7 +11497,7 @@
 			(uuid "7b29bc8f-7d21-486e-a52b-d51656dd2db7")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "#PWR07")
 					(unit 1)
@@ -11633,7 +11633,7 @@
 			(uuid "fe05e500-09a6-4266-8337-84818ba1add2")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "#PWR015")
 					(unit 1)
@@ -12153,7 +12153,7 @@
 			(uuid "c93bd9f0-d078-4197-a463-7f67a5cb89b5")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "R12")
 					(unit 1)
@@ -12222,7 +12222,7 @@
 			(uuid "6807131e-68c5-4b80-bc99-349c3ce194d5")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "C11")
 					(unit 1)
@@ -12290,7 +12290,7 @@
 			(uuid "c0c018c4-9cde-428e-b70d-59c0b32830ff")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "C13")
 					(unit 1)
@@ -12425,7 +12425,7 @@
 			(uuid "edae7fba-894d-4657-ab3a-58e6bf39a252")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "#PWR06")
 					(unit 1)
@@ -12510,7 +12510,7 @@
 			(uuid "8dcc67d0-2f80-40f0-b78e-ce545e37f9f2")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "U1")
 					(unit 1)
@@ -12713,7 +12713,7 @@
 			(uuid "3b87d27e-3ee1-4b9c-845d-8505124a915e")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "C19")
 					(unit 1)
@@ -12955,7 +12955,7 @@
 			(uuid "05803f75-263a-4c53-8a9e-b6d8f71a5ed5")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "U3")
 					(unit 1)
@@ -13571,7 +13571,7 @@
 			(uuid "2d9888f6-5fbe-4dc9-bb41-ac0606d59647")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "#FLG01")
 					(unit 1)
@@ -13705,7 +13705,7 @@
 			(uuid "8abfd3aa-3451-421f-bed0-b43014371f19")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "C16")
 					(unit 1)
@@ -13909,7 +13909,7 @@
 			(uuid "a34d7a1f-93c8-4e7b-b738-cc636b4fe917")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "R14")
 					(unit 1)
@@ -14014,7 +14014,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Connector_Wire:SolderWire-2sqmm_1x01_D2mm_OD3.9mm"
+		(property "Footprint" "Connector_Wire:SolderWire-0.5sqmm_1x01_D0.9mm_OD2.3mm"
 			(at 187.96 110.49 0)
 			(effects
 				(font
@@ -14045,7 +14045,7 @@
 			(uuid "c78ae235-bd6f-482e-ab87-48c3e69759ae")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "J2")
 					(unit 1)
@@ -14249,7 +14249,7 @@
 			(uuid "735258d8-c0cb-4a1b-a939-0b106fe3b878")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "R7")
 					(unit 1)
@@ -14315,7 +14315,7 @@
 			(uuid "6180a5be-748d-4661-b9bd-0ff464af0930")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "#PWR03")
 					(unit 1)
@@ -14472,7 +14472,7 @@
 			(uuid "232f12b8-6e86-4896-ba6c-757968bc1644")
 		)
 		(instances
-			(project ""
+			(project "clock-radio"
 				(path "/34a5d594-0d7a-4eb1-974a-5ffec479d839"
 					(reference "U6")
 					(unit 1)
