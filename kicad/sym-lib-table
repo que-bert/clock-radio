@@ -1,4 +1,4 @@
 (sym_lib_table
   (version 7)
-  (lib (name "ECE Library")(type "KiCad")(uri "/home/work/Downloads/ECE Kicad Libraries/ECE Kicad Libraries/ECE.kicad_sym")(options "")(descr ""))
+  (lib (name "ECE Library")(type "KiCad")(uri "${KIPRJMOD}/ECE Kicad Libraries/ECE Kicad Libraries/ECE.kicad_sym")(options "")(descr ""))
 )

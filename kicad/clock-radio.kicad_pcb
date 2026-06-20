@@ -7728,7 +7728,7 @@
 		(descr "Through hole straight socket strip, 1x02, 2.54mm pitch, single row (from Kicad 4.0.7), script generated")
 		(tags "Through hole socket strip THT 1x02 2.54mm single row")
 		(property "Reference" "J6"
-			(at 2.8 -1 0)
+			(at -3.2 -0.05 0)
 			(layer "F.SilkS")
 			(uuid "ba91cb83-0c46-4e40-bcfc-8d96a877de14")
 			(effects
@@ -8694,7 +8694,7 @@
 		(descr "MSOP, 8 Pin (https://www.jedec.org/system/files/docs/mo-187F.pdf variant AA), generated with kicad-footprint-generator ipc_gullwing_generator.py")
 		(tags "MSOP SO")
 		(property "Reference" "U6"
-			(at 0 2.45 0)
+			(at 0 2.2 0)
 			(layer "B.SilkS")
 			(uuid "41e42397-864e-48f6-b51e-67e25495a264")
 			(effects
@@ -9557,7 +9557,7 @@
 		(descr "Resistor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal with elongated pad for handsoldering. (Body size source: IPC-SM-782 page 72, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf), generated with kicad-footprint-generator")
 		(tags "resistor handsolder")
 		(property "Reference" "R12"
-			(at -2.7025 0 0)
+			(at -0.1525 1.25 0)
 			(layer "B.SilkS")
 			(uuid "29cc635a-08b6-4c28-8b3e-e5795ea2d9a2")
 			(effects
@@ -10141,7 +10141,7 @@
 		(descr "Resistor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal with elongated pad for handsoldering. (Body size source: IPC-SM-782 page 72, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf), generated with kicad-footprint-generator")
 		(tags "resistor handsolder")
 		(property "Reference" "R11"
-			(at -2.690541 -0.028809 0)
+			(at -0.140541 -1.128809 0)
 			(layer "B.SilkS")
 			(uuid "348dcf26-5be9-4c04-b49a-0053dbd3aebb")
 			(effects
@@ -10984,12 +10984,28 @@
 		(uuid "e187099a-b595-4396-bc23-c11b05acf40e")
 	)
 	(segment
+		(start 146.515 65.25)
+		(end 144.05 65.25)
+		(width 0.6)
+		(layer "F.Cu")
+		(net 1)
+		(uuid "eb2171a5-0162-4e64-9bb3-092f4f3b5adf")
+	)
+	(segment
 		(start 169.4 49.1)
 		(end 170 49.7)
 		(width 0.6)
 		(layer "F.Cu")
 		(net 1)
 		(uuid "eb953a12-32cb-4395-bbaa-0bac1374e47e")
+	)
+	(segment
+		(start 147.465 66.2)
+		(end 146.515 65.25)
+		(width 0.6)
+		(layer "F.Cu")
+		(net 1)
+		(uuid "f018be94-dc19-4114-a3a4-8cfd8cd134f0")
 	)
 	(segment
 		(start 153.5 45.875)
@@ -13450,22 +13466,6 @@
 		(layer "F.Cu")
 		(net 74)
 		(uuid "92c3c8f3-9377-4e34-a4c1-0072d88cd84d")
-	)
-	(segment
-		(start 169.975 42.25)
-		(end 169.975 41.477767)
-		(width 0.4)
-		(layer "B.Cu")
-		(net 74)
-		(uuid "66a0dab9-1f9b-4478-82ee-39de4ff9251e")
-	)
-	(segment
-		(start 169.975 41.477767)
-		(end 171 40.452767)
-		(width 0.4)
-		(layer "B.Cu")
-		(net 74)
-		(uuid "e0181ef1-c7bd-4a7b-b894-662f3ad0db8d")
 	)
 	(zone
 		(net 28)
