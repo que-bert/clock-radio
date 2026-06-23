@@ -137,7 +137,7 @@
 			(mirror no)
 			(drillshape 0)
 			(scaleselection 1)
-			(outputdirectory "/home/bbuckham/Downloads/")
+			(outputdirectory "../clock-radio gerber/update/")
 		)
 	)
 	(net 0 "")
@@ -9810,7 +9810,7 @@
 				(justify mirror)
 			)
 		)
-		(property "Value" "470u"
+		(property "Value" "1u"
 			(at 0 -1.16 90)
 			(layer "B.Fab")
 			(uuid "29dff272-f3f9-4610-8fd1-d7f185053fd1")
