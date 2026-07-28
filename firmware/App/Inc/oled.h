@@ -12,7 +12,9 @@
 
 void oled_init(void);
 void oled_clear(void);
-void oled_update(void);                 /* flush framebuffer to the panel */
+void oled_update(void);                 /* mark framebuffer for sending */
+bool oled_pump(void);                   /* send one dirty page (~9 ms); call
+                                           every main-loop pass; false = idle */
 
 void oled_set_pixel(int x, int y, bool on);
 void oled_char(int x, int y, char c, bool inverted);          /* 6x8 cell */

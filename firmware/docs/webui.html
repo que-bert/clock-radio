@@ -18,6 +18,10 @@
   #log { background:#000; color:#8f8; font-family:monospace; white-space:pre-wrap; padding:.6em; border-radius:6px; height:14em; overflow-y:auto; font-size:.85em; }
   .row { margin:.3em 0; display:flex; align-items:center; gap:.5em; flex-wrap:wrap; }
   .st { color:#fc6; font-family:monospace; }
+  .days { display:inline-flex; gap:.1em; }
+  .days label { display:inline-flex; flex-direction:column; align-items:center; font-size:.7em; color:#9ab; cursor:pointer; user-select:none; }
+  .days input { margin:0; }
+  .alarm { border-bottom:1px solid #234; padding:.35em 0; }
 </style>
 </head>
 <body>
@@ -81,17 +85,22 @@ const $ = id => document.getElementById(id);
 const log = t => { const l = $("log"); l.textContent += t; l.scrollTop = l.scrollHeight; };
 
 const SOUNDS = ["Classic", "Buzzer", "Soft", "Klaxon"];
+/* index 0 = Sunday .. 6 = Saturday, matching the firmware day mask */
+const DAYS = [["su","S"],["mo","M"],["tu","T"],["we","W"],["th","T"],["fr","F"],["sa","S"]];
 
 /* build alarm rows */
 for (let i = 1; i <= 4; i++) {
   const d = document.createElement("div");
-  d.className = "row";
+  d.className = "row alarm";
+  const days = DAYS.map(([c,l],j)=>
+    `<label title="${c}"><input type="checkbox" id="al${i}d${j}">${l}</label>`).join("");
   d.innerHTML = `<b>${i}</b>
     <input type="time" id="al${i}t" value="07:30">
     <select id="al${i}s">${SOUNDS.map((s,j)=>`<option value="${j+1}">${s}</option>`).join("")}</select>
     <label>vol <input type="number" id="al${i}v" min="1" max="15" value="12" style="width:3.5em"></label>
-    <button id="al${i}set" class="sec" disabled>Set+On</button>
-    <button id="al${i}off" class="sec" disabled>Off</button>`;
+    <span class="days">${days}</span>
+    <label><input type="checkbox" id="al${i}on"> on</label>
+    <button id="al${i}set" class="sec" disabled>Set</button>`;
   $("alarms").appendChild(d);
 }
 /* tz2 options */
@@ -108,6 +117,7 @@ async function send(cmd) {
   await writer.write(new TextEncoder().encode(cmd + "\n"));
 }
 
+let rxbuf = "";
 async function readLoop() {
   const dec = new TextDecoder();
   while (port && port.readable) {
@@ -116,11 +126,72 @@ async function readLoop() {
       for (;;) {
         const { value, done } = await reader.read();
         if (done) break;
-        log(dec.decode(value));
+        const text = dec.decode(value);
+        log(text);
+        rxbuf += text;
+        let idx;
+        while ((idx = rxbuf.indexOf("\n")) >= 0) {
+          const line = rxbuf.slice(0, idx).replace(/\r$/, "");
+          rxbuf = rxbuf.slice(idx + 1);
+          try { parseLine(line); } catch (e) { /* ignore parse hiccups */ }
+        }
       }
     } catch (e) { log("[read error: " + e + "]\n"); }
     finally { reader.releaseLock(); }
   }
+}
+
+/* ---- reflect the device's reported state onto the controls ---- */
+function setDays(i, spec) {
+  const on = new Array(7).fill(false);
+  spec = spec.trim();
+  if (spec === "daily")         on.fill(true);
+  else if (spec === "weekdays") [1,2,3,4,5].forEach(d => on[d] = true);
+  else if (spec === "weekends") { on[0] = true; on[6] = true; }
+  else if (spec !== "none")
+    spec.split(",").forEach(c => {
+      const d = DAYS.findIndex(([code]) => code === c.trim());
+      if (d >= 0) on[d] = true;
+    });
+  for (let d = 0; d < 7; d++) {
+    const el = $(`al${i}d${d}`);
+    if (el) el.checked = on[d];
+  }
+}
+
+function parseLine(line) {
+  let m;
+  m = line.match(/^alarm\s+(\d)\s+(\d{2}):(\d{2})\s+(on|off)\s+sound\s+(\S+)\s+vol\s+(\d+)\s+days\s+(\S+)/);
+  if (m) {
+    const i = +m[1];
+    $(`al${i}t`).value = m[2] + ":" + m[3];
+    $(`al${i}on`).checked = (m[4] === "on");
+    const si = SOUNDS.indexOf(m[5]);
+    if (si >= 0) $(`al${i}s`).value = si + 1;
+    $(`al${i}v`).value = m[6];
+    setDays(i, m[7]);
+    return;
+  }
+  m = line.match(/^radio\s+(on|off)\s+([\d.]+)\s+MHz\s+vol\s+(\d+)/);
+  if (m) {
+    $("freq").value = m[2];
+    $("vol").value = m[3];
+    $("volval").textContent = m[3];
+    return;
+  }
+  m = line.match(/tz2\s+(off|[+-]\d+)h?/);
+  if (m) { $("tz2").value = (m[1] === "off") ? "off" : parseInt(m[1], 10); return; }
+  m = line.match(/^snooze\s+(\d+)\s+min/);
+  if (m) { $("snooze").value = m[1]; return; }
+}
+
+/* build a "days SPEC" argument from an alarm row's checkboxes */
+function daySpec(i) {
+  const on = [];
+  for (let d = 0; d < 7; d++)
+    if ($(`al${i}d${d}`).checked) on.push(DAYS[d][0]);
+  if (on.length === 0 || on.length === 7) return "daily";
+  return on.join(",");
 }
 
 $("connect").onclick = async () => {
@@ -163,11 +234,15 @@ $("send").onclick = () => { send($("raw").value); $("raw").value = ""; };
 
 for (let i = 1; i <= 4; i++) {
   $(`al${i}set`).onclick = () => {
+    /* setting a time auto-arms the alarm, so apply the desired on/off last */
     send(`alarm ${i} ${$(`al${i}t`).value}`);
-    setTimeout(() => send(`alarm ${i} sound ${$(`al${i}s`).value}`), 300);
+    setTimeout(() => send(`alarm ${i} days ${daySpec(i)}`), 200);
+    setTimeout(() => send(`alarm ${i} sound ${$(`al${i}s`).value}`), 400);
     setTimeout(() => send(`alarm ${i} vol ${$(`al${i}v`).value}`), 600);
+    setTimeout(() => send(`alarm ${i} ${$(`al${i}on`).checked ? "on" : "off"}`), 800);
+    setTimeout(() => send("status"), 1000);   /* re-sync the UI to the device */
   };
-  $(`al${i}off`).onclick = () => send(`alarm ${i} off`);
+  $(`al${i}on`).onchange = e => send(`alarm ${i} ${e.target.checked ? "on" : "off"}`);
 }
 
 if (!("serial" in navigator)) {

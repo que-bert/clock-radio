@@ -15,6 +15,7 @@ void input_init(void);
 void input_tick(void);                 /* call every INPUT_TICK_MS */
 int  input_get_rotation(void);         /* signed detents since last call */
 btn_event_t input_get_button(void);    /* one event per call (or BTN_NONE) */
+uint32_t input_dbg_edges(void);        /* raw button edges seen (noise probe) */
 
 #define INPUT_TICK_MS 5
 

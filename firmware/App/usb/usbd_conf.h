@@ -65,7 +65,7 @@
   */
 
 /*---------- -----------*/
-#define USBD_MAX_NUM_INTERFACES        1U
+#define USBD_MAX_NUM_INTERFACES        4U   /* CDC(2) + Audio(2) */
 /*---------- -----------*/
 #define USBD_MAX_NUM_CONFIGURATION     1U
 /*---------- -----------*/

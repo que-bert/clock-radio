@@ -32,6 +32,7 @@ static uint8_t  alarm_en_mask = 0;       /* bit i = alarm i enabled */
 static uint8_t  cur_alarm;               /* alarm being edited */
 static uint8_t  alarm_vol[N_ALARMS] = {12, 12, 12, 12};  /* 1..15, per alarm */
 static uint8_t  alarm_snd[N_ALARMS] = {0, 0, 0, 0};      /* sound table index */
+static uint8_t  alarm_dow[N_ALARMS] = {0, 0, 0, 0};      /* day mask, 0 = daily */
 static uint8_t  ring_alarm;              /* alarm now ringing/snoozed */
 static uint32_t preview_until;           /* tone preview deadline, 0 = idle */
 static int8_t   tz2_off;                 /* 2nd time zone, hours; 0 = off */
@@ -42,6 +43,7 @@ static uint8_t  menu_editing;
 static uint8_t  volume     = 6;          /* 0..15 */
 static bool     muted      = false;
 static bool     radio_on   = false;
+static bool     usb_audio_en = true;     /* USB speaker enabled (setting) */
 static uint32_t radio_khz  = 101900;
 static char     rds[9]     = "        ";
 static uint8_t  contrast   = 0x80;
@@ -50,6 +52,14 @@ static uint8_t  contrast   = 0x80;
  * so a volume-knob spin becomes one flash write, not thirty */
 static bool     cfg_dirty;
 static uint32_t cfg_at;
+
+/* debug: worst input-poll interval, to spot main-loop stalls */
+static uint32_t in_gap_max, rtc_dbg_max, ui_dur_max, rend_dbg_max, sec_dbg_max;
+uint32_t ui_dbg_ingap(void) { uint32_t g = in_gap_max; in_gap_max = 0; return g; }
+uint32_t ui_dbg_rtcmax(void){ uint32_t g = rtc_dbg_max; rtc_dbg_max = 0; return g; }
+uint32_t ui_dbg_durmax(void){ uint32_t g = ui_dur_max; ui_dur_max = 0; return g; }
+uint32_t ui_dbg_rendmax(void){ uint32_t g = rend_dbg_max; rend_dbg_max = 0; return g; }
+uint32_t ui_dbg_secmax(void){ uint32_t g = sec_dbg_max; sec_dbg_max = 0; return g; }
 
 /* deferred power-on tune: the RDA5807's crystal needs a few hundred ms
  * after enable before a TUNE can lock; tuning during ui_init fails
@@ -68,6 +78,8 @@ static uint8_t  fired_mask;              /* alarms already fired this minute */
 static rtc_time_t edit_t;
 static uint8_t  edit_field;              /* time: 0=hour 1=min
                                             date: 0=year 1=month 2=day */
+static bool     day_edit;                /* alarm editor: in the per-day picker */
+static uint8_t  day_cursor;              /* 0..6 = Sun..Sat cursor in the picker */
 
 /* menu */
 static int menu_id;                      /* which menu page */
@@ -79,7 +91,7 @@ static const char *menu_presets[] = {"101.9 FM","100.3 FM","Back"};
 
 static const char *menu_main[]    = {"Radio","Alarm","Clock","Display","Back"};
 static const char *menu_radio[]   = {"Tune","Presets","Seek Up","Seek Down",
-                                     "","Diagnostics","Back"};
+                                     "","","Diagnostics","Back"};
 static const char *menu_alarm[N_ALARMS + 2];
 static const char *menu_clock[]   = {"Set Time","Set Date","","","Back"};
 static const char *menu_display[] = {"Contrast +","Contrast -","Back"};
@@ -89,6 +101,7 @@ static void fmt_hm(char *out, int n, uint8_t h, uint8_t m);
 /* labels rebuilt on every call so toggle states are always current */
 static char lbl_alarm[N_ALARMS][16];
 static char lbl_snooze[20], lbl_radio_on[12], lbl_fmt[12], lbl_tz[16];
+static char lbl_usb[16];
 
 static const char **menu_items(int id, int *n)
 {
@@ -97,7 +110,10 @@ static const char **menu_items(int id, int *n)
         snprintf(lbl_radio_on, sizeof lbl_radio_on, "Radio: %s",
                  radio_on ? "ON" : "off");
         menu_radio[4] = lbl_radio_on;
-        *n = 7; return menu_radio;
+        snprintf(lbl_usb, sizeof lbl_usb, "USB Audio: %s",
+                 usb_audio_en ? "ON" : "off");
+        menu_radio[5] = lbl_usb;
+        *n = 8; return menu_radio;
     case M_PRESETS: *n = 3; return menu_presets;
     case M_ALARM:
         for (int i = 0; i < N_ALARMS; i++) {
@@ -134,7 +150,11 @@ static const char **menu_items(int id, int *n)
 /* ---------------- audio routing ---------------- */
 static void apply_audio(void)
 {
-    if (ringing) return;                 /* audio.c drives the amp while ringing */
+    audio_usb_set_knob(volume);          /* knob also scales USB playback */
+    audio_usb_set_dev_mute(muted);       /* click-mute covers USB too */
+    audio_usb_set_enabled(usb_audio_en);
+    audio_usb_set_blocked(radio_on);     /* radio outranks USB playback */
+    if (ringing || audio_usb_active()) return;  /* audio.c owns the amp then */
     if (radio_on && !muted) {
         rda_set_volume(volume);
         rda_mute(false);
@@ -204,12 +224,14 @@ static void cfg_save_now(void)
     for (int i = 0; i < N_ALARMS; i++) {
         s.alarm_vol[i]   = alarm_vol[i];
         s.alarm_sound[i] = alarm_snd[i];
+        s.alarm_dow[i]   = alarm_dow[i];
     }
     s.snooze_len = snooze_len;
     s.contrast   = contrast;
     s.tz2        = tz2_off;
-    s.flags      = (fmt24    ? SET_F_FMT24    : 0)
-                 | (radio_on ? SET_F_RADIO_ON : 0);
+    s.flags      = (fmt24         ? SET_F_FMT24    : 0)
+                 | (radio_on      ? SET_F_RADIO_ON : 0)
+                 | (!usb_audio_en ? SET_F_USB_OFF  : 0);
     settings_save(&s);
 }
 
@@ -245,25 +267,72 @@ static void cfg_load(void)
         alarm_vol[i] = (s.alarm_vol[i] >= 1 && s.alarm_vol[i] <= 15)
                        ? s.alarm_vol[i] : 12;
         alarm_snd[i] = s.alarm_sound[i] % AUDIO_N_SOUNDS;
+        alarm_dow[i] = s.alarm_dow[i] & SET_DOW_DAILY;
     }
     snooze_len = (s.snooze_len >= 1 && s.snooze_len <= 15) ? s.snooze_len : 9;
     contrast   = s.contrast;
     tz2_off    = (s.tz2 >= -12 && s.tz2 <= 14) ? s.tz2 : 0;
     fmt24      = (s.flags & SET_F_FMT24)    != 0;
     radio_on   = (s.flags & SET_F_RADIO_ON) != 0;
+    usb_audio_en = (s.flags & SET_F_USB_OFF) == 0;
 }
 
-/* index of the enabled alarm that fires soonest after `now`, or -1 */
+/* day of week for a date, 0=Sun..6=Sat (Sakamoto; valid 1900..) */
+static uint8_t dow_of(const rtc_time_t *t)
+{
+    static const int k[12] = {0,3,2,5,0,3,5,1,4,6,2,4};
+    int y = 2000 + t->year, m = t->month, d = t->day;
+    if (m < 3) y -= 1;
+    return (uint8_t)(((y + y/4 - y/100 + y/400 + k[m-1] + d) % 7 + 7) % 7);
+}
+
+/* does alarm i repeat on weekday `dow` (0=Sun)? mask 0 = every day */
+static bool alarm_on_dow(int i, uint8_t dow)
+{
+    return alarm_dow[i] == 0 || ((alarm_dow[i] >> dow) & 1);
+}
+
+/* compact day string: active days as their letter, others '.' (Sun..Sat) */
+static void fmt_days(char *out, uint8_t mask)
+{
+    static const char L[7] = {'S','M','T','W','T','F','S'};
+    uint8_t m = mask ? mask : SET_DOW_DAILY;
+    for (int d = 0; d < 7; d++) out[d] = ((m >> d) & 1) ? L[d] : '.';
+    out[7] = '\0';
+}
+
+/* machine-parseable day token: daily | weekdays | weekends | su,mo,.. */
+static void fmt_days_tok(char *out, int n, uint8_t mask)
+{
+    static const char *ab[7] = {"su","mo","tu","we","th","fr","sa"};
+    uint8_t m = mask ? mask : SET_DOW_DAILY;
+    if (m == SET_DOW_DAILY)    { snprintf(out, n, "daily");    return; }
+    if (m == SET_DOW_WEEKDAYS) { snprintf(out, n, "weekdays"); return; }
+    if (m == SET_DOW_WEEKENDS) { snprintf(out, n, "weekends"); return; }
+    int len = 0;
+    for (int d = 0; d < 7; d++)
+        if ((m >> d) & 1)
+            len += snprintf(out + len, (size_t)(n - len),
+                            "%s%s", len ? "," : "", ab[d]);
+    if (!len) snprintf(out, n, "daily");
+}
+
+/* index of the enabled alarm that fires soonest, honoring day-of-week, or -1.
+ * Scans today plus the next 7 days so any active weekday is covered. */
 static int next_alarm(void)
 {
     int best = -1;
-    uint16_t best_dt = 0xFFFF;
+    long best_dt = 0x7FFFFFFF;
     uint16_t nowm = (uint16_t)(now.hour * 60 + now.min);
-    for (int i = 0; i < N_ALARMS; i++) {
-        if (!((alarm_en_mask >> i) & 1)) continue;
-        uint16_t am = (uint16_t)(alarm_h[i] * 60 + alarm_m[i]);
-        uint16_t dt = (uint16_t)((am - nowm + 1440) % 1440);
-        if (dt < best_dt) { best_dt = dt; best = i; }
+    uint8_t dow0 = dow_of(&now);
+    for (int dd = 0; dd <= 7; dd++) {
+        uint8_t dow = (uint8_t)((dow0 + dd) % 7);
+        for (int i = 0; i < N_ALARMS; i++) {
+            if (!((alarm_en_mask >> i) & 1) || !alarm_on_dow(i, dow)) continue;
+            long dt = (long)dd * 1440 + alarm_h[i] * 60 + alarm_m[i] - nowm;
+            if (dt < 0) continue;              /* already passed on day dd */
+            if (dt < best_dt) { best_dt = dt; best = i; }
+        }
     }
     return best;
 }
@@ -317,6 +386,8 @@ static void draw_home(void)
         snprintf(buf, sizeof buf, "FM%lu.%lu %s",
                  (unsigned long)(radio_khz/1000),
                  (unsigned long)((radio_khz%1000)/100), rds);
+    } else if (audio_usb_active()) {
+        snprintf(buf, sizeof buf, "%s", muted ? "USB MUTED" : "USB AUDIO");
     } else {
         snprintf(buf, sizeof buf, "%s", muted ? "MUTED" : "RADIO OFF");
     }
@@ -367,10 +438,49 @@ static void draw_edit(const char *title, uint8_t h, uint8_t m)
     oled_update();
 }
 
+/* 9x9 checkbox: hollow square, with a checkmark inside when ticked */
+static void draw_checkbox(int x, int y, bool checked)
+{
+    for (int i = 0; i < 9; i++) {                /* border */
+        oled_set_pixel(x + i, y,     true);
+        oled_set_pixel(x + i, y + 8, true);
+        oled_set_pixel(x,     y + i, true);
+        oled_set_pixel(x + 8, y + i, true);
+    }
+    if (checked) {                               /* bold check mark */
+        static const int8_t pts[][2] = {
+            {2,3},{2,4},{3,4},{3,5},{4,5},{4,6},
+            {5,5},{5,4},{6,3},{6,2},{7,2},{7,1},
+        };
+        for (unsigned k = 0; k < sizeof pts / sizeof pts[0]; k++)
+            oled_set_pixel(x + pts[k][0], y + pts[k][1], true);
+    }
+}
+
+/* per-day picker: rotate moves the cursor, click toggles that day.
+ * each day shows a checkbox; the cursor day's code is inverted. */
+static void draw_day_picker(void)
+{
+    static const char *cd[7] = {"Su","Mo","Tu","We","Th","Fr","Sa"};
+    char buf[20];
+    oled_clear();
+    snprintf(buf, sizeof buf, "AL%u DAYS", cur_alarm + 1);
+    oled_text(0, 0, buf, false);
+    uint8_t m = alarm_dow[cur_alarm];            /* materialized non-zero on entry */
+    for (int d = 0; d < 7; d++) {
+        int x = 3 + d * 18;                      /* 7 cells across 128px */
+        oled_text(x, 20, cd[d], d == day_cursor);
+        draw_checkbox(x + 1, 34, (m >> d) & 1);  /* under the 2-letter code */
+    }
+    oled_text(0, 54, "click=toggle L=back", false);
+    oled_update();
+}
+
 /* the active field is drawn inverted (or underlined, for the big digits) */
 static void draw_alarm_edit(void)
 {
     char buf[20];
+    if (day_edit) { draw_day_picker(); return; }
     oled_clear();
     snprintf(buf, sizeof buf, "ALARM %u", cur_alarm + 1);
     oled_text(0, 0, buf, false);
@@ -387,8 +497,11 @@ static void draw_alarm_edit(void)
 
     snprintf(buf, sizeof buf, "Sound: %s", audio_sound_name(alarm_snd[cur_alarm]));
     oled_text(0, 40, buf, edit_field == 2);
-    snprintf(buf, sizeof buf, "Volume: %u", alarm_vol[cur_alarm]);
+    snprintf(buf, sizeof buf, "V:%u", alarm_vol[cur_alarm]);
     oled_text(0, 52, buf, edit_field == 3);
+    char days[8];
+    fmt_days(days, alarm_dow[cur_alarm]);
+    oled_text(80, 52, days, edit_field == 5);
     oled_update();
 }
 
@@ -530,6 +643,9 @@ static void menu_select(void)
                                                           rds_clear(); }
                                           apply_audio(); cfg_save_immediately();
                                           return; }
+        if (!strncmp(it,"USB Audio:",10)) { usb_audio_en = !usb_audio_en;
+                                            apply_audio(); cfg_save_immediately();
+                                            return; }
         if (!strcmp(it,"Diagnostics")) { st = ST_DIAG; return; }
     }
     if (menu_id == M_PRESETS) {
@@ -544,7 +660,7 @@ static void menu_select(void)
     }
     if (menu_id == M_ALARM) {
         if (menu_sel < N_ALARMS)  { cur_alarm = (uint8_t)menu_sel; edit_field = 0;
-                                    st = ST_SET_ALARM; return; }
+                                    day_edit = false; st = ST_SET_ALARM; return; }
         if (menu_sel == N_ALARMS) { menu_editing = EDIT_SNOOZE; return; }
     }
     if (menu_id == M_CLOCK) {
@@ -613,7 +729,13 @@ static void handle_menu(int rot, btn_event_t b)
         menu_sel = ((menu_sel + rot) % n + n) % n;   /* wrap both ways */
     }
     if (b == BTN_CLICK)  menu_select();
-    if (b == BTN_LONG)   menu_back();
+    if (b == BTN_LONG) {                 /* quick on/off toggle on an alarm row,
+                                            otherwise the usual "back" */
+        if (menu_id == M_ALARM && menu_sel < N_ALARMS) {
+            alarm_en_mask ^= (uint8_t)(1u << menu_sel);
+            cfg_touch();
+        } else menu_back();
+    }
     if (b == BTN_DOUBLE) st = ST_HOME;
 }
 
@@ -659,10 +781,41 @@ static void handle_set_date(int rot, btn_event_t b)
     if (b == BTN_LONG) st = ST_MENU;         /* cancel */
 }
 
-/* fields: 0=hour 1=min 2=sound 3=volume 4=on/off */
+/* rotary day editing cycles through common presets, then each single day;
+ * arbitrary combinations (e.g. Mon+Thu) are settable over the console/web */
+static const uint8_t dow_presets[] = {
+    SET_DOW_DAILY, SET_DOW_WEEKDAYS, SET_DOW_WEEKENDS,
+    0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40,   /* Sun..Sat singly */
+};
+#define N_DOW_PRESETS ((int)(sizeof dow_presets / sizeof dow_presets[0]))
+
+static void dow_cycle(uint8_t i, int rot)
+{
+    uint8_t cur = alarm_dow[i] ? alarm_dow[i] : SET_DOW_DAILY;
+    int idx = 0;                             /* custom masks snap to Daily */
+    for (int k = 0; k < N_DOW_PRESETS; k++)
+        if (dow_presets[k] == cur) { idx = k; break; }
+    idx = ((idx + rot) % N_DOW_PRESETS + N_DOW_PRESETS) % N_DOW_PRESETS;
+    alarm_dow[i] = dow_presets[idx];
+}
+
+/* fields: 0=hour 1=min 2=sound 3=volume 4=on/off 5=days
+ * on the Days field: rotate = quick preset, long-press = open the per-day
+ * picker (rotate=move cursor, click=toggle a day, long-press=back). */
 static void handle_set_alarm(int rot, btn_event_t b)
 {
     uint8_t i = cur_alarm;
+
+    if (day_edit) {                          /* per-day picker sub-mode */
+        if (rot) day_cursor = (uint8_t)((day_cursor + rot + 7) % 7);
+        if (b == BTN_CLICK) {
+            uint8_t nm = alarm_dow[i] ^ (uint8_t)(1u << day_cursor);
+            if (nm) { alarm_dow[i] = nm; cfg_touch(); }  /* keep >=1 day set */
+        }
+        if (b == BTN_LONG || b == BTN_DOUBLE) day_edit = false;
+        return;
+    }
+
     if (rot) {
         switch (edit_field) {
         case 0: case 1:
@@ -685,13 +838,21 @@ static void handle_set_alarm(int rot, btn_event_t b)
             if (rot > 0) alarm_en_mask |=  (uint8_t)(1u << i);
             else         alarm_en_mask &= (uint8_t)~(1u << i);
             break;
+        case 5:
+            dow_cycle(i, rot);
+            break;
         }
     }
     if (b == BTN_CLICK) {
-        if (edit_field < 4) edit_field++;
-        else { cfg_touch(); st = ST_MENU; }
+        if (edit_field < 5) edit_field++;
+        else { cfg_touch(); st = ST_MENU; }  /* click on Days saves & exits */
     }
-    if (b == BTN_LONG) { cfg_touch(); st = ST_MENU; }
+    if (b == BTN_LONG) {
+        if (edit_field == 5) {               /* long-press Days opens the picker */
+            day_edit = true; day_cursor = 0;
+            if (alarm_dow[i] == 0) alarm_dow[i] = SET_DOW_DAILY;  /* 0 means daily */
+        } else { cfg_touch(); st = ST_MENU; }
+    }
 }
 
 static void handle_tune(int rot, btn_event_t b)
@@ -734,11 +895,13 @@ void ui_init(void)
     rda_init();
     rda_mute(true);
     ds3231_get_time(&now);
-    if (radio_on)                    /* resume last station - but tune only
+    audio_usb_set_enabled(usb_audio_en);
+    if (radio_on) {                  /* resume last station - but tune only
                                         once the tuner's crystal is stable;
                                         stay muted until then */
+        audio_usb_set_blocked(true); /* radio outranks USB from the start */
         resume_tune_at = HAL_GetTick() + 800;
-    else
+    } else
         apply_audio();
     render();
 }
@@ -750,6 +913,8 @@ void ui_tick(void)
 
     /* input poll @5ms */
     if (ms - t_input >= INPUT_TICK_MS) {
+        uint32_t gap = ms - t_input;         /* debug: worst poll interval */
+        if (gap > in_gap_max) in_gap_max = gap;
         t_input = ms;
         input_tick();
         int rot = input_get_rotation();
@@ -800,7 +965,11 @@ void ui_tick(void)
     /* once per second: refresh time, RDS, evaluate alarm */
     if (ms - t_sec >= 1000) {
         t_sec = ms;
+        uint32_t s0 = HAL_GetTick();             /* debug: whole-block timing */
+        uint32_t t0 = s0;                        /* debug: RTC read stall? */
         ds3231_get_time(&now);
+        uint32_t dt = HAL_GetTick() - t0;
+        if (dt > rtc_dbg_max) rtc_dbg_max = dt;
 
         /* per-alarm once-per-minute tracking, so alarms can't block each
          * other: a snoozed session no longer suppresses other alarms (a new
@@ -808,8 +977,10 @@ void ui_tick(void)
          * minute ring back-to-back as each is dismissed */
         if (fired_min != now.min) { fired_min = now.min; fired_mask = 0; }
         if (!ringing) {
+            uint8_t dow = dow_of(&now);
             for (int i = 0; i < N_ALARMS; i++) {
                 if (((alarm_en_mask >> i) & 1) && !((fired_mask >> i) & 1) &&
+                    alarm_on_dow(i, dow) &&
                     now.hour == alarm_h[i] && now.min == alarm_m[i]) {
                     fired_mask |= (uint8_t)(1u << i);
                     ring_alarm = (uint8_t)i;   /* snooze re-rings this one */
@@ -818,6 +989,8 @@ void ui_tick(void)
                 }
             }
         }
+        uint32_t sdt = HAL_GetTick() - s0;
+        if (sdt > sec_dbg_max) sec_dbg_max = sdt;
     }
 
     /* deferred power-on tune (see resume_tune_at) */
@@ -839,11 +1012,41 @@ void ui_tick(void)
         apply_audio();
     }
 
-    /* deferred settings write, 3s after the last change */
-    if (cfg_dirty && ms - cfg_at >= 3000) { cfg_dirty = false; cfg_save_now(); }
+    /* USB speaker owns the DAC/amp while streaming: mute the radio into the
+     * shared amp when it starts, restore the prior routing when it stops */
+    static bool usb_was_active;
+    bool usb_now = audio_usb_active();
+    if (usb_now != usb_was_active) {
+        usb_was_active = usb_now;
+        if (usb_now) rda_mute(true);
+        else         apply_audio();
+    }
+
+    /* deferred settings write, 3s after the last change. While USB audio is
+     * audibly playing, wait for a quiet moment: the flash stall (up to ~40 ms
+     * on a page erase) starves the iso stream and garbles playback. A 30s cap
+     * bounds the loss window if the stream never goes quiet. */
+    if (cfg_dirty && ms - cfg_at >= 3000 &&
+        (!audio_usb_loud() || ms - cfg_at >= 30000)) {
+        cfg_dirty = false;
+        cfg_save_now();
+    }
 
     /* render @~10 fps (or immediately handled above by state change) */
-    if (ms - t_render >= 100) { t_render = ms; render(); }
+    if (ms - t_render >= 100) {
+        t_render = ms;
+        uint32_t r0 = HAL_GetTick();
+        render();
+        uint32_t rdt = HAL_GetTick() - r0;
+        if (rdt > rend_dbg_max) rend_dbg_max = rdt;
+    }
+
+    /* push at most one dirty OLED page per pass (~9 ms) so input polling
+     * and the console never stall behind a full-frame I2C transfer */
+    oled_pump();
+
+    uint32_t dur = HAL_GetTick() - ms;       /* debug: whole-pass duration */
+    if (dur > ui_dur_max) ui_dur_max = dur;
 }
 
 /* ---------------- software-interface hooks (USB console) ----------------
@@ -900,8 +1103,21 @@ void ui_cmd_alarm_vol(int idx, int vol)
     cfg_touch();
 }
 
+void ui_cmd_alarm_days(int idx, uint8_t mask)
+{
+    alarm_dow[idx] = mask & SET_DOW_DAILY;
+    cfg_touch();
+}
+
 void ui_cmd_snooze(uint8_t mins) { snooze_len = mins; cfg_touch(); }
 void ui_cmd_tz2(int off_hours)   { tz2_off = (int8_t)off_hours; cfg_touch(); }
+
+void ui_cmd_usb_audio(bool en)
+{
+    usb_audio_en = en;
+    apply_audio();
+    cfg_save_immediately();
+}
 
 void ui_get_status(char *buf, int n)
 {
@@ -926,12 +1142,19 @@ void ui_get_status(char *buf, int n)
                         (unsigned long)((radio_khz % 1000) / 100),
                         volume, muted ? " (muted)" : "", rssi, rds);
     }
-    for (int i = 0; i < N_ALARMS && len < n; i++)
+    if (len < n)
+        len += snprintf(buf + len, (size_t)(n - len), "usbaudio %s%s\r\n",
+                        usb_audio_en ? "on" : "off",
+                        audio_usb_active() ? "  (streaming)" : "");
+    for (int i = 0; i < N_ALARMS && len < n; i++) {
+        char days[24];
+        fmt_days_tok(days, sizeof days, alarm_dow[i]);
         len += snprintf(buf + len, (size_t)(n - len),
-                        "alarm %d  %02u:%02u %s  sound %s  vol %u\r\n",
+                        "alarm %d  %02u:%02u %s  sound %s  vol %u  days %s\r\n",
                         i + 1, alarm_h[i], alarm_m[i],
                         (alarm_en_mask >> i) & 1 ? "on " : "off",
-                        audio_sound_name(alarm_snd[i]), alarm_vol[i]);
+                        audio_sound_name(alarm_snd[i]), alarm_vol[i], days);
+    }
     if (len < n)
         snprintf(buf + len, (size_t)(n - len), "snooze %u min%s\r\n",
                  snooze_len,

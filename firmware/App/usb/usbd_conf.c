@@ -363,14 +363,24 @@ USBD_StatusTypeDef USBD_LL_Init(USBD_HandleTypeDef *pdev)
   /* USER CODE END RegisterCallBackSecondPart */
 #endif /* USE_HAL_PCD_REGISTER_CALLBACKS */
   /* USER CODE BEGIN EndPoint_Configuration */
-  HAL_PCDEx_PMAConfig(&hpcd_USB_DRD_FS, 0x00 , PCD_SNG_BUF, 0x14);
-  HAL_PCDEx_PMAConfig(&hpcd_USB_DRD_FS, 0x80 , PCD_SNG_BUF, 0x54);
+  /* PMA layout. The DRD IP keeps the endpoint buffer-descriptor table in the
+   * FIRST 64 bytes of PMA (8 bytes per endpoint, EPs 0-7 -> 0x00..0x3F), so
+   * packet buffers must start at 0x40. The CubeMX default put EP0's OUT
+   * buffer at 0x14, which let every SETUP packet overwrite the descriptors
+   * of EP2 (harmless, unused RX half) and EP3 (broke iso audio entirely). */
+  HAL_PCDEx_PMAConfig(&hpcd_USB_DRD_FS, 0x00 , PCD_SNG_BUF, 0x40);
+  HAL_PCDEx_PMAConfig(&hpcd_USB_DRD_FS, 0x80 , PCD_SNG_BUF, 0x80);
   /* USER CODE END EndPoint_Configuration */
   /* USER CODE BEGIN EndPoint_Configuration_CDC */
-  HAL_PCDEx_PMAConfig(&hpcd_USB_DRD_FS, CDC_IN_EP, PCD_SNG_BUF, 0x94);
-  HAL_PCDEx_PMAConfig(&hpcd_USB_DRD_FS, CDC_OUT_EP, PCD_SNG_BUF, 0xD4);
-  HAL_PCDEx_PMAConfig(&hpcd_USB_DRD_FS, CDC_CMD_EP, PCD_SNG_BUF, 0x114);
+  HAL_PCDEx_PMAConfig(&hpcd_USB_DRD_FS, CDC_IN_EP, PCD_SNG_BUF, 0xC0);
+  HAL_PCDEx_PMAConfig(&hpcd_USB_DRD_FS, CDC_OUT_EP, PCD_SNG_BUF, 0x100);
+  HAL_PCDEx_PMAConfig(&hpcd_USB_DRD_FS, CDC_CMD_EP, PCD_SNG_BUF, 0x140);
   /* USER CODE END EndPoint_Configuration_CDC */
+  /* USER CODE BEGIN EndPoint_Configuration_AUDIO */
+  /* Audio iso OUT (0x03): iso endpoints on the DRD IP are always
+   * double-buffered in hardware - 64 bytes per bank */
+  HAL_PCDEx_PMAConfig(&hpcd_USB_DRD_FS, 0x03, PCD_DBL_BUF, 0x01A00160);
+  /* USER CODE END EndPoint_Configuration_AUDIO */
 
   return USBD_OK;
 }

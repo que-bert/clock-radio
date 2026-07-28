@@ -59,6 +59,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     App/usb/usbd_conf.c
     App/usb/usbd_desc.c
     App/usb/usbd_cdc_if.c
+    App/usb/usbd_composite.c
     App/usb/usb_device.c
     ${USB_MW}/Core/Src/usbd_core.c
     ${USB_MW}/Core/Src/usbd_ctlreq.c

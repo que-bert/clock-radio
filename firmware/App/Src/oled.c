@@ -145,15 +145,45 @@ void oled_fill_row(int page, bool on)
     for (int x = 0; x < OLED_W; x++) fb[page * OLED_W + x] = on ? 0xFF : 0x00;
 }
 
+uint32_t oled_dbg_max;                 /* worst single page-write, ms */
+
+/* Pushing the whole frame in one go blocks the main loop ~70 ms, which is
+ * long enough to make the UI feel dead (and used to eat button presses when
+ * they were polled). oled_update() therefore only marks the frame dirty;
+ * oled_pump() - called once per main-loop pass - sends ONE page (~9 ms), so
+ * the loop stays responsive while a frame trickles out.
+ *
+ * A sweep, once started, always finishes all 8 pages; a new frame marked
+ * mid-sweep only queues the next sweep. (Restarting at page 0 on every mark
+ * starved the bottom pages whenever renders arrived faster than a sweep
+ * drained - which happened when USB-audio interrupt load stretched the I2C
+ * writes, freezing the lower half of the screen.) */
+static uint8_t push_page = 8;          /* next page to send; 8 = idle */
+static bool    frame_dirty;            /* a new frame awaits the next sweep */
+
 void oled_update(void)
 {
-    for (int page = 0; page < 8; page++) {
-        cmd(0xB0 | page);                                   /* page address */
-        cmd(0x00 | (SH1106_COL_OFFSET & 0x0F));             /* low column   */
-        cmd(0x10 | (SH1106_COL_OFFSET >> 4));               /* high column  */
-        uint8_t line[1 + OLED_W];
-        line[0] = 0x40;                                     /* data stream  */
-        for (int x = 0; x < OLED_W; x++) line[1 + x] = fb[page * OLED_W + x];
-        HAL_I2C_Master_Transmit(&hi2c2, ADDR_SH1106, line, sizeof(line), 100);
+    frame_dirty = true;
+}
+
+bool oled_pump(void)
+{
+    if (push_page >= 8) {
+        if (!frame_dirty) return false;
+        frame_dirty = false;
+        push_page = 0;                 /* begin a full sweep of the new frame */
     }
+    uint32_t t0 = HAL_GetTick();
+    uint8_t page = push_page;
+    cmd(0xB0 | page);                                   /* page address */
+    cmd(0x00 | (SH1106_COL_OFFSET & 0x0F));             /* low column   */
+    cmd(0x10 | (SH1106_COL_OFFSET >> 4));               /* high column  */
+    uint8_t line[1 + OLED_W];
+    line[0] = 0x40;                                     /* data stream  */
+    for (int x = 0; x < OLED_W; x++) line[1 + x] = fb[page * OLED_W + x];
+    HAL_I2C_Master_Transmit(&hi2c2, ADDR_SH1106, line, sizeof(line), 100);
+    push_page++;
+    uint32_t dt = HAL_GetTick() - t0;
+    if (dt > oled_dbg_max) oled_dbg_max = dt;
+    return true;
 }

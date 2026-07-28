@@ -9,6 +9,7 @@
 /* Peripheral handles defined in main.c */
 extern I2C_HandleTypeDef hi2c2;
 extern DAC_HandleTypeDef hdac1;
+extern DMA_HandleTypeDef hdma_dac1_ch1;
 extern TIM_HandleTypeDef htim2;   /* rotary encoder (TI12) */
 extern TIM_HandleTypeDef htim6;   /* DAC sample clock, 16 kHz */
 

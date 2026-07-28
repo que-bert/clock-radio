@@ -11,6 +11,8 @@
 #include "ds3231.h"
 #include "audio.h"
 #include "rda5807.h"
+#include "input.h"
+#include "settings.h"
 #include "usbd_cdc_if.h"
 #include "bsp.h"
 #include <string.h>
@@ -34,13 +36,18 @@ void console_rx(const uint8_t *buf, uint32_t len)
 }
 
 /* ---- TX ---- */
+static uint32_t cputs_dbg_max;         /* worst cputs busy-wait, ms */
+static uint32_t con_dur_max;           /* worst console_tick duration, ms */
+
 static void cputs(const char *s)
 {
     uint16_t len = (uint16_t)strlen(s);
     uint32_t t0 = HAL_GetTick();
     while (CDC_Transmit_FS((uint8_t *)s, len) == 1 /* USBD_BUSY */) {
-        if (HAL_GetTick() - t0 > 50) return; /* host gone - don't hang */
+        if (HAL_GetTick() - t0 > 50) break;  /* host gone - don't hang */
     }
+    uint32_t dt = HAL_GetTick() - t0;
+    if (dt > cputs_dbg_max) cputs_dbg_max = dt;
 }
 
 /* ---- helpers ---- */
@@ -71,6 +78,36 @@ static bool parse_hhmm(const char *s, int *h, int *m, int *sec)
     return true;
 }
 
+/* parse a day-of-week spec into a mask (bit0=Sun..bit6=Sat).
+ * accepts: daily/every/all, weekdays, weekends, a numeric mask 0..127,
+ * or a comma list of two-letter codes su,mo,tu,we,th,fr,sa. */
+static bool parse_days(const char *s, uint8_t *mask)
+{
+    static const char *ab[7] = {"su","mo","tu","we","th","fr","sa"};
+    if (!strcmp(s,"daily") || !strcmp(s,"every") || !strcmp(s,"everyday") ||
+        !strcmp(s,"all"))                       { *mask = SET_DOW_DAILY;    return true; }
+    if (!strcmp(s,"weekdays"))                  { *mask = SET_DOW_WEEKDAYS; return true; }
+    if (!strcmp(s,"weekends"))                  { *mask = SET_DOW_WEEKENDS; return true; }
+    if (s[0] >= '0' && s[0] <= '9') {           /* raw numeric mask */
+        long v = strtol(s, NULL, 0);
+        if (v < 0 || v > 127) return false;
+        *mask = (uint8_t)v; return true;
+    }
+    uint8_t m = 0;
+    for (const char *p = s; *p; ) {
+        int found = -1;
+        for (int k = 0; k < 7; k++)
+            if (p[0] == ab[k][0] && p[1] == ab[k][1]) { found = k; break; }
+        if (found < 0) return false;
+        m |= (uint8_t)(1u << found);
+        p += 2;
+        if (*p == ',') p++;
+        else if (*p)   return false;            /* junk after a code */
+    }
+    if (!m) return false;
+    *mask = m; return true;
+}
+
 static void do_status(void)
 {
     char buf[512];
@@ -90,12 +127,14 @@ static const char *HELP =
     "  alarm N on|off            enable/disable\r\n"
     "  alarm N sound 1-4         Classic/Buzzer/Soft/Klaxon\r\n"
     "  alarm N vol 1-15\r\n"
+    "  alarm N days SPEC         daily|weekdays|weekends|su,mo,tu,we,th,fr,sa\r\n"
     "  snooze 1-15               snooze minutes\r\n"
     "  radio on|off\r\n"
     "  tune MHZ                  e.g. tune 101.9\r\n"
     "  seek [up|down]\r\n"
     "  vol 0-15\r\n"
     "  mute on|off\r\n"
+    "  usbaudio on|off           enable/disable the USB speaker\r\n"
     "  rdsraw                    dump one RDS frame (debug)\r\n"
     "  rdsmsg                    show learned scroll message (debug)\r\n"
     "  rdsfr                     dump RDS frame registry (debug)\r\n"
@@ -184,6 +223,14 @@ static void exec_line(char *line)
             else cputs("err: vol 1-15\r\n");
             return;
         }
+        if (!strcmp(v, "days")) {
+            const char *w = next_tok(&p);
+            uint8_t mask;
+            if (w && parse_days(w, &mask)) {
+                ui_cmd_alarm_days(idx, mask); cputs("ok\r\n");
+            } else cputs("err: days daily|weekdays|weekends|su,mo,tu,we,th,fr,sa\r\n");
+            return;
+        }
         int h, m;
         if (parse_hhmm(v, &h, &m, NULL)) {
             ui_cmd_alarm(idx, h, m); cputs("ok\r\n");
@@ -239,6 +286,13 @@ static void exec_line(char *line)
         cputs("err: mute on|off\r\n");
         return;
     }
+    if (!strcmp(cmd, "usbaudio")) {
+        const char *a = next_tok(&p);
+        if (a && !strcmp(a, "on"))  { ui_cmd_usb_audio(true);  cputs("ok\r\n"); return; }
+        if (a && !strcmp(a, "off")) { ui_cmd_usb_audio(false); cputs("ok\r\n"); return; }
+        cputs("err: usbaudio on|off\r\n");
+        return;
+    }
     if (!strcmp(cmd, "rdsraw")) {
         /* debug: dump one RDS frame (regs 0x0A..0x0F) and decode the basics */
         uint8_t r[12];
@@ -269,6 +323,39 @@ static void exec_line(char *line)
         cputs("\r\n");
         return;
     }
+    if (!strcmp(cmd, "usbstat")) {
+        uint32_t pkts, dout, isoinc; uint16_t lastn, gap, wr; int16_t smp; uint8_t fl;
+        audio_usb_stats(&pkts, &dout, &isoinc, &lastn, &gap, &wr, &smp, &fl);
+        char b[160];
+        snprintf(b, sizeof b,
+                 "usb dout=%lu iso_inc=%lu wrote=%lu lastn=%u smp0=%d gap=%u wr=%u "
+                 "dac=%u alt=%u blk=%u amp=%u\r\n",
+                 (unsigned long)dout, (unsigned long)isoinc, (unsigned long)pkts,
+                 lastn, smp, gap, wr,
+                 fl & 1, (fl >> 1) & 1, (fl >> 2) & 1, (fl >> 3) & 1);
+        cputs(b);
+        return;
+    }
+    if (!strcmp(cmd, "btnstat")) {
+        /* debug: button edges, worst input-poll gap, and blocker durations */
+        extern uint32_t oled_dbg_max;
+        char b[96];
+        snprintf(b, sizeof b,
+                 "edges=%lu maxgap=%lums oled=%lums cputs=%lums rtc=%lums "
+                 "ui=%lums con=%lums rend=%lums sec=%lums\r\n",
+                 (unsigned long)input_dbg_edges(),
+                 (unsigned long)ui_dbg_ingap(),
+                 (unsigned long)oled_dbg_max,
+                 (unsigned long)cputs_dbg_max,
+                 (unsigned long)ui_dbg_rtcmax(),
+                 (unsigned long)ui_dbg_durmax(),
+                 (unsigned long)con_dur_max,
+                 (unsigned long)ui_dbg_rendmax(),
+                 (unsigned long)ui_dbg_secmax());
+        oled_dbg_max = 0; cputs_dbg_max = 0; con_dur_max = 0;
+        cputs(b);
+        return;
+    }
     if (!strcmp(cmd, "dfu")) {
         cputs("entering DFU bootloader (reflash with dfu-util)...\r\n");
         HAL_Delay(100);              /* let the reply flush over CDC */
@@ -291,6 +378,7 @@ void console_tick(void)
 {
     static char line[80];
     static uint8_t pos;
+    uint32_t t0 = HAL_GetTick();
 
     while (rb_tail != rb_head) {
         char c = (char)rb[rb_tail];
@@ -307,4 +395,6 @@ void console_tick(void)
             line[pos++] = c;
         }
     }
+    uint32_t dt = HAL_GetTick() - t0;
+    if (dt > con_dur_max) con_dur_max = dt;
 }

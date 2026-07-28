@@ -1,9 +1,9 @@
 /* settings.c - persistent settings in the last flash page (2KB @ 0x0807F800)
  *
- * Wear leveling: the page is used as an append-only log of 16-byte slots.
+ * Wear leveling: the page is used as an append-only log of 64-byte slots.
  * The newest valid slot wins on load. A save writes the next free slot;
- * only when all 128 are used is the page erased (so ~128 saves per erase
- * cycle -> >1M saves over the 10k-cycle flash endurance). The firmware
+ * only when all 32 are used is the page erased (so ~32 saves per erase
+ * cycle -> >300k saves over the 10k-cycle flash endurance). The firmware
  * image is ~40KB, nowhere near this page, and neither dfu-util nor the
  * OpenOCD `program` command erase pages they don't write, so settings
  * survive reflashing.
@@ -13,10 +13,10 @@
 #include <string.h>
 
 #define CFG_PAGE_ADDR  0x0807F800u          /* bank 2, page 127 (last 2KB) */
-#define CFG_SLOT_SIZE  32u
+#define CFG_SLOT_SIZE  64u
 #define CFG_SLOTS      (FLASH_PAGE_SIZE / CFG_SLOT_SIZE)
 #define CFG_MAGIC      0xC10Cu
-#define CFG_VERSION    4u        /* v4: per-alarm volume & sound */
+#define CFG_VERSION    5u        /* v5: per-alarm day-of-week mask */
 
 _Static_assert(sizeof(settings_t) == CFG_SLOT_SIZE, "slot size");
 
@@ -60,7 +60,7 @@ bool settings_save(const settings_t *in)
     settings_t s = *in;
     s.magic = CFG_MAGIC;
     s.version = CFG_VERSION;
-    s.pad[0] = s.pad[1] = 0;
+    memset(s.pad, 0, sizeof s.pad);
     s.checksum = 0;
     s.checksum = (uint8_t)(0u - sum8(&s, CFG_SLOT_SIZE));
 
