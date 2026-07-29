@@ -138,12 +138,13 @@ void audio_usb_set_host_gain(uint16_t q15)
 }
 
 /* knob curve matched to the RDA5807's hardware volume (~2 dB per step,
- * measured: radio v1 ~ -28 dB): 0 dB at 15, -2 dB/step. Volume 0 continues
- * the curve (-30 dB, quietest audible) rather than muting - mute is its own
- * control (home-screen click), same split as the radio chip. The old
- * alarm-amplitude curve fell ~3 dB/step, leaving USB much quieter mid-range. */
+ * measured: radio v1 ~ -28 dB): 0 dB at 15, -2 dB/step. Volume 0 is the
+ * quietest audible step, not mute - mute is its own control (home-screen
+ * click), same split as the radio chip. The radio's bottom step drops much
+ * further than its mid-range 2 dB/step, so v0 dips to -35 dB to match
+ * (empirically: -30 dB was louder than the radio at 0, -40 dB too quiet). */
 static const uint16_t knob_db2_q15[16] = {
-     1036,  1304,  1642,  2067,  2603,  3277,  4125,  5193,
+      583,  1304,  1642,  2067,  2603,  3277,  4125,  5193,
      6538,  8231, 10362, 13045, 16423, 20675, 26029, 32767
 };
 
