@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<!-- Clock-Radio web interface (Web Serial API).
+     Open in Chrome/Edge, plug the clock-radio's USB port in, click Connect.
+     Talks the same line protocol as any serial terminal ('help' for docs). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Clock Radio Control</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 1.5em auto; padding: 0 1em; background:#14141c; color:#eee; }
+  h1 { font-size: 1.3em; } h2 { font-size: 1.05em; margin: 1.2em 0 .4em; color:#9db; }
+  fieldset { border: 1px solid #345; border-radius: 8px; margin-bottom: 1em; }
+  button { background:#2a6; color:#fff; border:0; border-radius:6px; padding:.45em .9em; margin:.15em; cursor:pointer; font-size:1em; }
+  button:disabled { background:#555; }
+  button.sec { background:#357; }
+  input, select { background:#222; color:#eee; border:1px solid #456; border-radius:4px; padding:.35em; font-size:1em; }
+  input[type=time] { width: 8em; }
+  #log { background:#000; color:#8f8; font-family:monospace; white-space:pre-wrap; padding:.6em; border-radius:6px; height:14em; overflow-y:auto; font-size:.85em; }
+  .row { margin:.3em 0; display:flex; align-items:center; gap:.5em; flex-wrap:wrap; }
+  .st { color:#fc6; font-family:monospace; }
+  .days { display:inline-flex; gap:.1em; }
+  .days label { display:inline-flex; flex-direction:column; align-items:center; font-size:.7em; color:#9ab; cursor:pointer; user-select:none; }
+  .days input { margin:0; }
+  .alarm { border-bottom:1px solid #234; padding:.35em 0; }
+</style>
+</head>
+<body>
+<h1>🐀 Clock Radio — Software Interface</h1>
+<div class="row">
+  <button id="connect">Connect</button>
+  <span id="connstate" class="st">not connected</span>
+  <button id="refresh" class="sec" disabled>Refresh status</button>
+</div>
+
+<fieldset><legend>Clock</legend>
+  <div class="row">
+    <button id="sync" disabled>Sync time &amp; date from this computer</button>
+  </div>
+  <div class="row">
+    <button id="fmt12" class="sec" disabled>12h</button>
+    <button id="fmt24" class="sec" disabled>24h</button>
+    <label>2nd time zone
+      <select id="tz2" disabled>
+        <option value="off">off</option>
+      </select>
+    </label>
+  </div>
+</fieldset>
+
+<fieldset><legend>Radio</legend>
+  <div class="row">
+    <button id="radioon" disabled>Radio ON</button>
+    <button id="radiooff" class="sec" disabled>Radio OFF</button>
+    <button id="seekdn" class="sec" disabled>&#9666; Seek</button>
+    <button id="seek" class="sec" disabled>Seek &#9656;</button>
+    <label>Tune <input id="freq" type="number" min="87.5" max="107.9" step="0.2" value="101.9" style="width:5.5em"> MHz</label>
+    <button id="tune" disabled>Go</button>
+  </div>
+  <div class="row">
+    <label>Volume <input id="vol" type="range" min="0" max="15" value="6"></label>
+    <span id="volval" class="st">6</span>
+    <button id="muteon" class="sec" disabled>Mute</button>
+    <button id="muteoff" class="sec" disabled>Unmute</button>
+  </div>
+</fieldset>
+
+<fieldset><legend>Alarms</legend>
+  <div id="alarms"></div>
+  <div class="row">
+    <label>Snooze <input id="snooze" type="number" min="1" max="15" value="9" style="width:4em"> min</label>
+    <button id="snoozeset" class="sec" disabled>Set</button>
+  </div>
+</fieldset>
+
+<h2>Device log</h2>
+<div id="log"></div>
+<div class="row">
+  <input id="raw" placeholder="raw command ('help')" style="flex:1" disabled>
+  <button id="send" class="sec" disabled>Send</button>
+</div>
+
+<script>
+let port = null, writer = null;
+const $ = id => document.getElementById(id);
+const log = t => { const l = $("log"); l.textContent += t; l.scrollTop = l.scrollHeight; };
+
+const SOUNDS = ["Classic", "Buzzer", "Soft", "Klaxon"];
+/* index 0 = Sunday .. 6 = Saturday, matching the firmware day mask */
+const DAYS = [["su","S"],["mo","M"],["tu","T"],["we","W"],["th","T"],["fr","F"],["sa","S"]];
+
+/* build alarm rows */
+for (let i = 1; i <= 4; i++) {
+  const d = document.createElement("div");
+  d.className = "row alarm";
+  const days = DAYS.map(([c,l],j)=>
+    `<label title="${c}"><input type="checkbox" id="al${i}d${j}">${l}</label>`).join("");
+  d.innerHTML = `<b>${i}</b>
+    <input type="time" id="al${i}t" value="07:30">
+    <select id="al${i}s">${SOUNDS.map((s,j)=>`<option value="${j+1}">${s}</option>`).join("")}</select>
+    <label>vol <input type="number" id="al${i}v" min="1" max="15" value="12" style="width:3.5em"></label>
+    <span class="days">${days}</span>
+    <label><input type="checkbox" id="al${i}on"> on</label>
+    <button id="al${i}set" class="sec" disabled>Set</button>`;
+  $("alarms").appendChild(d);
+}
+/* tz2 options */
+for (let o = -12; o <= 14; o++) {
+  if (o === 0) continue;
+  const e = document.createElement("option");
+  e.value = o; e.textContent = (o > 0 ? "+" : "") + o + " h";
+  $("tz2").appendChild(e);
+}
+
+async function send(cmd) {
+  if (!writer) return;
+  log("> " + cmd + "\n");
+  await writer.write(new TextEncoder().encode(cmd + "\n"));
+}
+
+let rxbuf = "";
+async function readLoop() {
+  const dec = new TextDecoder();
+  while (port && port.readable) {
+    const reader = port.readable.getReader();
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const text = dec.decode(value);
+        log(text);
+        rxbuf += text;
+        let idx;
+        while ((idx = rxbuf.indexOf("\n")) >= 0) {
+          const line = rxbuf.slice(0, idx).replace(/\r$/, "");
+          rxbuf = rxbuf.slice(idx + 1);
+          try { parseLine(line); } catch (e) { /* ignore parse hiccups */ }
+        }
+      }
+    } catch (e) { log("[read error: " + e + "]\n"); }
+    finally { reader.releaseLock(); }
+  }
+}
+
+/* ---- reflect the device's reported state onto the controls ---- */
+function setDays(i, spec) {
+  const on = new Array(7).fill(false);
+  spec = spec.trim();
+  if (spec === "daily")         on.fill(true);
+  else if (spec === "weekdays") [1,2,3,4,5].forEach(d => on[d] = true);
+  else if (spec === "weekends") { on[0] = true; on[6] = true; }
+  else if (spec !== "none")
+    spec.split(",").forEach(c => {
+      const d = DAYS.findIndex(([code]) => code === c.trim());
+      if (d >= 0) on[d] = true;
+    });
+  for (let d = 0; d < 7; d++) {
+    const el = $(`al${i}d${d}`);
+    if (el) el.checked = on[d];
+  }
+}
+
+function parseLine(line) {
+  let m;
+  m = line.match(/^alarm\s+(\d)\s+(\d{2}):(\d{2})\s+(on|off)\s+sound\s+(\S+)\s+vol\s+(\d+)\s+days\s+(\S+)/);
+  if (m) {
+    const i = +m[1];
+    $(`al${i}t`).value = m[2] + ":" + m[3];
+    $(`al${i}on`).checked = (m[4] === "on");
+    const si = SOUNDS.indexOf(m[5]);
+    if (si >= 0) $(`al${i}s`).value = si + 1;
+    $(`al${i}v`).value = m[6];
+    setDays(i, m[7]);
+    return;
+  }
+  m = line.match(/^radio\s+(on|off)\s+([\d.]+)\s+MHz\s+vol\s+(\d+)/);
+  if (m) {
+    $("freq").value = m[2];
+    $("vol").value = m[3];
+    $("volval").textContent = m[3];
+    return;
+  }
+  m = line.match(/tz2\s+(off|[+-]\d+)h?/);
+  if (m) { $("tz2").value = (m[1] === "off") ? "off" : parseInt(m[1], 10); return; }
+  m = line.match(/^snooze\s+(\d+)\s+min/);
+  if (m) { $("snooze").value = m[1]; return; }
+}
+
+/* build a "days SPEC" argument from an alarm row's checkboxes */
+function daySpec(i) {
+  const on = [];
+  for (let d = 0; d < 7; d++)
+    if ($(`al${i}d${d}`).checked) on.push(DAYS[d][0]);
+  if (on.length === 0 || on.length === 7) return "daily";
+  return on.join(",");
+}
+
+$("connect").onclick = async () => {
+  try {
+    /* filter: only the clock-radio (ST VID, CDC PID) shows in the picker */
+    port = await navigator.serial.requestPort(
+        { filters: [{ usbVendorId: 0x0483, usbProductId: 0x5740 }] });
+    await port.open({ baudRate: 115200 });
+    writer = port.writable.getWriter();
+    $("connstate").textContent = "connected";
+    document.querySelectorAll("button, input, select").forEach(e => e.disabled = false);
+    readLoop();
+    send("status");
+  } catch (e) { log("[connect failed: " + e + "]\n"); }
+};
+
+$("refresh").onclick = () => send("status");
+$("sync").onclick = () => {
+  const n = new Date();
+  const p = x => String(x).padStart(2, "0");
+  send(`time ${p(n.getHours())}:${p(n.getMinutes())}:${p(n.getSeconds())}`);
+  setTimeout(() => send(
+    `date ${n.getFullYear()}-${p(n.getMonth()+1)}-${p(n.getDate())}`), 300);
+};
+$("fmt12").onclick = () => send("12h");
+$("fmt24").onclick = () => send("24h");
+$("tz2").onchange = e => send("tz2 " + e.target.value);
+$("radioon").onclick = () => send("radio on");
+$("radiooff").onclick = () => send("radio off");
+$("seek").onclick = () => send("seek up");
+$("seekdn").onclick = () => send("seek down");
+$("tune").onclick = () => send("tune " + $("freq").value);
+$("vol").oninput = e => $("volval").textContent = e.target.value;
+$("vol").onchange = e => send("vol " + e.target.value);
+$("muteon").onclick = () => send("mute on");
+$("muteoff").onclick = () => send("mute off");
+$("snoozeset").onclick = () => send("snooze " + $("snooze").value);
+$("raw").onkeydown = e => { if (e.key === "Enter") { send(e.target.value); e.target.value = ""; } };
+$("send").onclick = () => { send($("raw").value); $("raw").value = ""; };
+
+for (let i = 1; i <= 4; i++) {
+  $(`al${i}set`).onclick = () => {
+    /* setting a time auto-arms the alarm, so apply the desired on/off last */
+    send(`alarm ${i} ${$(`al${i}t`).value}`);
+    setTimeout(() => send(`alarm ${i} days ${daySpec(i)}`), 200);
+    setTimeout(() => send(`alarm ${i} sound ${$(`al${i}s`).value}`), 400);
+    setTimeout(() => send(`alarm ${i} vol ${$(`al${i}v`).value}`), 600);
+    setTimeout(() => send(`alarm ${i} ${$(`al${i}on`).checked ? "on" : "off"}`), 800);
+    setTimeout(() => send("status"), 1000);   /* re-sync the UI to the device */
+  };
+  $(`al${i}on`).onchange = e => send(`alarm ${i} ${e.target.checked ? "on" : "off"}`);
+}
+
+if (!("serial" in navigator)) {
+  $("connect").disabled = true;
+  $("connstate").textContent =
+      "this browser has no Web Serial - open in Chromium";
+  log("No Web Serial API here. Run:  chromium " + location.href + "\n");
+}
+</script>
+</body>
+</html>

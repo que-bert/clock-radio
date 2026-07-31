@@ -1,3 +1,8 @@
 # KiCad transient lock files
 *.lck
 ~*.lck
+
+# Firmware: build output and user-local settings
+firmware/build/
+firmware/.idea/
+firmware/CMakeUserPresets.json
